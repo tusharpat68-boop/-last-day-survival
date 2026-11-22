@@ -29,3 +29,7 @@ When it finishes, open the run and download the artifact `last-day-survival-debu
 
 ## Desktop test controls (not needed on Android)
 WASD move, Shift sprint, Space jump, C crouch, V camera switch, Esc pause. Mouse acts as touch.
+
+## Phase 2 (survival stats, backpack, resources)
+Tunable values: `data/survival/config.json` (drain rates, regen, stamina costs) and
+`data/items/items.json` (items). Edit them, commit, push, and rebuild - no code changes needed.

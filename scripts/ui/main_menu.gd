@@ -29,7 +29,7 @@ func _build_main_menu() -> void:
     _menu_center.add_child(box)
 
     box.add_child(_make_label("LAST DAY: SURVIVAL", 52, Color(0.85, 0.2, 0.15)))
-    box.add_child(_make_label("Phase 1 prototype", 20, Color(0.7, 0.7, 0.7)))
+    box.add_child(_make_label("Phase 2 prototype", 20, Color(0.7, 0.7, 0.7)))
 
     box.add_child(_make_button("NEW GAME - OFFLINE", _on_offline_pressed))
     box.add_child(_make_button("ONLINE SOLO (coming soon)", Callable(), true))
@@ -63,6 +63,15 @@ func _build_settings_panel() -> void:
     box.add_child(_make_label("Third-person camera distance", 22, Color.WHITE))
     box.add_child(_make_slider(2.0, 6.0, 0.1, SettingsManager.third_person_distance,
         func(v: float) -> void: SettingsManager.third_person_distance = v))
+    box.add_child(_make_label("Render scale (lower = faster)", 22, Color.WHITE))
+    box.add_child(_make_slider(0.5, 1.0, 0.05, SettingsManager.render_scale,
+        func(v: float) -> void: SettingsManager.render_scale = v))
+    var shadow_check := CheckButton.new()
+    shadow_check.text = "Shadows (slower)"
+    shadow_check.button_pressed = SettingsManager.shadows_enabled
+    shadow_check.add_theme_font_size_override("font_size", 22)
+    shadow_check.toggled.connect(func(on: bool) -> void: SettingsManager.shadows_enabled = on)
+    box.add_child(shadow_check)
     box.add_child(_make_button("BACK", _on_settings_back))
 
 

@@ -2,7 +2,7 @@ extends Node
 ## Central input state (autoload "MobileInput").
 ## The touch HUD writes into it; the player reads from it.
 ## Keyboard fallback exists only for desktop testing:
-## WASD move, Shift sprint, Space jump, C crouch, V camera, Esc pause.
+## WASD move, Shift sprint, Space jump, C crouch, V camera, E use, I backpack, Esc pause.
 
 signal action_pressed(action: StringName)
 signal action_released(action: StringName)
@@ -86,6 +86,10 @@ func _unhandled_key_input(event: InputEvent) -> void:
             action = &"crouch"
         KEY_V:
             action = &"camera_switch"
+        KEY_E:
+            action = &"interact"
+        KEY_I:
+            action = &"backpack"
         KEY_ESCAPE:
             action = &"pause"
     if action == &"":

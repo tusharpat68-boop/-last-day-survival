@@ -1,10 +1,14 @@
 extends CharacterBody3D
 ## Reusable player controller: walk / run / sprint / jump / crouch,
-## first- and third-person cameras with a persistent camera switch.
+## first- and third-person cameras with a persistent camera switch,
+## plus survival stats, backpack and world interaction (Phase 2).
 ## The whole body yaws with the camera (shooter-style), so switching
 ## cameras never changes position, rotation or velocity.
 
 const PF = preload("res://scripts/world/placeholder_factory.gd")
+const SurvivalStatsScript = preload("res://scripts/survival/survival_stats.gd")
+const InventoryScript = preload("res://scripts/inventory/inventory.gd")
+const PickupScript = preload("res://scripts/world/pickup.gd")
 
 const WALK_SPEED := 2.5
 const RUN_SPEED := 5.0
@@ -25,11 +29,22 @@ const LOOK_RADIANS_PER_PIXEL := 0.0035
 const MAX_PITCH := 1.309         # 75 degrees
 const KILL_Y := -30.0
 
+const INTERACT_RANGE := 2.5
+const WATER_REACH := 1.5
+const DROP_DISTANCE := 1.3
+const DRINK_AMOUNT := 20.0
+
+var stats            # SurvivalStats node
+var inventory        # Inventory (RefCounted)
+
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 var _pitch := 0.0
 var _crouching := false
 var _jump_requested := false
 var _spawn_position := Vector3.ZERO
+var _interact_target = null   # pickup or pond node
+var _prompt_timer := 0.0
+var _last_prompt := ""
 
 var _capsule: CapsuleShape3D
 var _collision: CollisionShape3D
@@ -42,9 +57,15 @@ var _weapon_fp: MeshInstance3D
 
 
 func _ready() -> void:
+    add_to_group("player")
     _spawn_position = global_position
     collision_layer = 2
     collision_mask = 1
+
+    stats = SurvivalStatsScript.new()
+    add_child(stats)
+    inventory = InventoryScript.new()
+
     _build_body()
     _build_camera_rig()
     EventBus.camera_mode_changed.connect(_on_camera_mode_changed)
@@ -70,6 +91,8 @@ func _build_body() -> void:
     var body_mesh := CapsuleMesh.new()
     body_mesh.radius = RADIUS
     body_mesh.height = 1.4
+    body_mesh.radial_segments = 16
+    body_mesh.rings = 4
     var body := PF.mesh_instance(body_mesh, Color(0.2, 0.35, 0.55))
     body.position.y = 0.7
     _model.add_child(body)
@@ -77,6 +100,8 @@ func _build_body() -> void:
     var head_mesh := SphereMesh.new()
     head_mesh.radius = 0.2
     head_mesh.height = 0.4
+    head_mesh.radial_segments = 16
+    head_mesh.rings = 8
     var head := PF.mesh_instance(head_mesh, Color(0.85, 0.7, 0.6))
     head.position.y = 1.55
     _model.add_child(head)
@@ -153,11 +178,12 @@ func _on_action_pressed(action: StringName) -> void:
     match action:
         &"jump":
             _jump_requested = true
-            _crouching = false
         &"crouch":
             _crouching = not _crouching
         &"camera_switch":
             GameState.toggle_camera_mode()
+        &"interact":
+            _try_interact()
 
 
 func _physics_process(delta: float) -> void:
@@ -165,9 +191,14 @@ func _physics_process(delta: float) -> void:
     _handle_crouch(delta)
 
     var move := MobileInput.get_move()
+    var magnitude := move.length()
+    var wants_sprint := magnitude >= SPRINT_THRESHOLD and not _crouching
+    var sprinting: bool = wants_sprint and stats.can_sprint()
+    stats.set_sprinting(sprinting)
+
     var wish := global_transform.basis * Vector3(move.x, 0.0, move.y)
     wish.y = 0.0
-    var target := wish.normalized() * _speed_for(move.length())
+    var target := wish.normalized() * _speed_for(magnitude, sprinting)
     var accel := ACCEL if is_on_floor() else AIR_ACCEL
     var blend := clampf(accel * delta, 0.0, 1.0)
     velocity.x = lerpf(velocity.x, target.x, blend)
@@ -175,22 +206,28 @@ func _physics_process(delta: float) -> void:
 
     if not is_on_floor():
         velocity.y -= _gravity * delta
-    elif _jump_requested:
+    elif _jump_requested and stats.try_spend_jump():
         velocity.y = JUMP_VELOCITY
+        _crouching = false
     _jump_requested = false
 
     move_and_slide()
+
+    _prompt_timer -= delta
+    if _prompt_timer <= 0.0:
+        _prompt_timer = 0.15
+        _update_interact_target()
 
     if global_position.y < KILL_Y:
         _respawn()
 
 
-func _speed_for(magnitude: float) -> float:
+func _speed_for(magnitude: float, sprinting: bool) -> float:
     if magnitude < 0.01:
         return 0.0
     if _crouching:
         return CROUCH_SPEED
-    if magnitude >= SPRINT_THRESHOLD:
+    if sprinting:
         return SPRINT_SPEED
     if magnitude >= RUN_THRESHOLD:
         return RUN_SPEED
@@ -213,6 +250,80 @@ func _handle_crouch(delta: float) -> void:
     _collision.position.y = _capsule.height * 0.5
     _pitch_pivot.position.y = _capsule.height - EYE_OFFSET
     _model.scale.y = _capsule.height / STAND_HEIGHT
+
+
+# ---------------------------------------------------------------- interaction
+
+func _update_interact_target() -> void:
+    _interact_target = null
+    var flat := Vector2(global_position.x, global_position.z)
+    var best := INTERACT_RANGE
+    for node in get_tree().get_nodes_in_group("pickups"):
+        var dist := flat.distance_to(Vector2(node.global_position.x, node.global_position.z))
+        if dist < best:
+            best = dist
+            _interact_target = node
+    if _interact_target == null:
+        for pond in get_tree().get_nodes_in_group("water"):
+            var radius: float = pond.get_meta("radius", 5.0)
+            var edge_dist := flat.distance_to(Vector2(pond.global_position.x, pond.global_position.z)) - radius
+            if edge_dist < WATER_REACH:
+                _interact_target = pond
+                break
+
+    var text := ""
+    if _interact_target != null:
+        if _interact_target.is_in_group("pickups"):
+            text = _interact_target.prompt_text()
+        else:
+            text = "Drink water"
+    if text != _last_prompt:
+        _last_prompt = text
+        EventBus.interact_prompt_changed.emit(text)
+
+
+func _try_interact() -> void:
+    _update_interact_target()
+    if _interact_target == null or not is_instance_valid(_interact_target):
+        return
+    var target = _interact_target
+    if target.is_in_group("pickups"):
+        var id: String = target.item_id
+        var amount: int = target.quantity
+        var left: int = inventory.add_item(id, amount)
+        if left < amount:
+            EventBus.message_posted.emit("Picked up %s x%d" % [ItemDatabase.item_name(id), amount - left])
+        if left == 0:
+            target.queue_free()
+        else:
+            target.quantity = left
+            EventBus.message_posted.emit("Backpack is full")
+    else:
+        stats.apply_effects({"thirst": DRINK_AMOUNT})
+        EventBus.message_posted.emit("You drink from the pond")
+    _prompt_timer = 0.0
+
+
+## Drops a whole stack from the backpack in front of the player.
+func drop_slot(index: int) -> void:
+    var item: Dictionary = inventory.take_slot(index)
+    if item.is_empty():
+        return
+    var pickup = PickupScript.new()
+    pickup.setup(item["id"], int(item["qty"]))
+    get_parent().add_child(pickup)
+    var forward := -global_transform.basis.z
+    pickup.global_position = global_position + forward * DROP_DISTANCE
+    EventBus.message_posted.emit("Dropped %s x%d" % [ItemDatabase.item_name(item["id"]), int(item["qty"])])
+
+
+# ---------------------------------------------------------------- respawn
+
+## Full respawn after death: resets survival stats, keeps the backpack.
+func respawn() -> void:
+    stats.reset()
+    _crouching = false
+    _respawn()
 
 
 func _respawn() -> void:

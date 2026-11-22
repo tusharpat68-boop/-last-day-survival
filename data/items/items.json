@@ -1,0 +1,37 @@
+{
+  "water_bottle": {
+    "name": "Water Bottle",
+    "description": "Clean drinking water. Restores thirst.",
+    "stack": 5,
+    "color": "#4aa3df",
+    "use": {"thirst": 35}
+  },
+  "canned_food": {
+    "name": "Canned Food",
+    "description": "Preserved food. Restores hunger.",
+    "stack": 5,
+    "color": "#c98a3b",
+    "use": {"hunger": 35}
+  },
+  "bandage": {
+    "name": "Bandage",
+    "description": "Basic first aid. Restores health.",
+    "stack": 5,
+    "color": "#eeeeee",
+    "use": {"health": 25}
+  },
+  "wood": {
+    "name": "Wood",
+    "description": "Raw material for crafting and building.",
+    "stack": 20,
+    "color": "#7a5230",
+    "use": {}
+  },
+  "stone": {
+    "name": "Stone",
+    "description": "Raw material for crafting and building.",
+    "stack": 20,
+    "color": "#8a8a90",
+    "use": {}
+  }
+}

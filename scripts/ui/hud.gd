@@ -1,9 +1,14 @@
 extends CanvasLayer
 ## Android touch HUD. All touch routing happens here so that the joystick,
 ## buttons and look-drag work simultaneously (true multi-touch).
+## Phase 2 adds: survival bars, interact prompt, toast messages,
+## backpack panel and death screen.
 
 const JoystickScript = preload("res://scripts/ui/virtual_joystick.gd")
 const TouchButtonScript = preload("res://scripts/ui/touch_button.gd")
+const StatBarsScript = preload("res://scripts/ui/stat_bars.gd")
+const InventoryPanelScript = preload("res://scripts/ui/inventory_panel.gd")
+const DeathScreenScript = preload("res://scripts/ui/death_screen.gd")
 const MAIN_MENU_SCENE := "res://scenes/main/main_menu.tscn"
 
 const JOYSTICK_RADIUS := 110.0
@@ -33,7 +38,14 @@ var _buttons: Array = []
 var _owners: Dictionary = {}   # touch index -> joystick | button | LOOK_OWNER
 var _viewport_size := Vector2(1280, 720)
 var _info_label: Label
+var _prompt_label: Label
+var _toast_label: Label
+var _toast_time := 0.0
 var _pause_layer: CanvasLayer
+var _stat_bars
+var _inventory_panel
+var _death_screen
+var _player
 
 
 func _ready() -> void:
@@ -58,10 +70,47 @@ func _ready() -> void:
     _info_label.add_theme_font_size_override("font_size", 18)
     _root.add_child(_info_label)
 
+    _stat_bars = StatBarsScript.new()
+    _stat_bars.position = Vector2(24, 48)
+    _root.add_child(_stat_bars)
+
+    _prompt_label = _make_centered_label(340.0, 22)
+    _toast_label = _make_centered_label(700.0, 22)
+    _toast_label.modulate.a = 0.0
+
     _build_pause_menu()
+
+    _inventory_panel = InventoryPanelScript.new()
+    add_child(_inventory_panel)
+    _inventory_panel.closed.connect(_on_inventory_closed)
+
+    _death_screen = DeathScreenScript.new()
+    add_child(_death_screen)
+    _death_screen.respawn_requested.connect(_on_respawn_requested)
+
+    _player = get_tree().get_first_node_in_group("player")
+    if _player != null:
+        _stat_bars.bind(_player.stats)
+        _player.stats.died.connect(_on_player_died)
+    else:
+        push_warning("HUD: no player found in group 'player'")
+
     _layout()
     get_viewport().size_changed.connect(_layout)
     MobileInput.action_pressed.connect(_on_action_pressed)
+    EventBus.interact_prompt_changed.connect(_on_prompt_changed)
+    EventBus.message_posted.connect(_on_message_posted)
+
+
+func _make_centered_label(width: float, font_size: int) -> Label:
+    var label := Label.new()
+    label.size = Vector2(width, 36)
+    label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    label.add_theme_font_size_override("font_size", font_size)
+    label.add_theme_color_override("font_outline_color", Color.BLACK)
+    label.add_theme_constant_override("outline_size", 6)
+    _root.add_child(label)
+    return label
 
 
 func _layout() -> void:
@@ -74,11 +123,26 @@ func _layout() -> void:
         var cy: float = float(entry["dy"]) if entry["top"] else _viewport_size.y - float(entry["dy"])
         var r: float = entry["r"]
         _buttons[i].position = Vector2(cx - r, cy - r)
+    _prompt_label.position = Vector2(_viewport_size.x * 0.5 - _prompt_label.size.x * 0.5, _viewport_size.y - 170.0)
+    _toast_label.position = Vector2(_viewport_size.x * 0.5 - _toast_label.size.x * 0.5, 24.0)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
     var mode_name := "FIRST PERSON" if GameState.camera_mode == GameState.CameraMode.FIRST_PERSON else "THIRD PERSON"
     _info_label.text = "FPS %d  |  %s" % [Engine.get_frames_per_second(), mode_name]
+    if _toast_time > 0.0:
+        _toast_time -= delta
+        _toast_label.modulate.a = clampf(_toast_time, 0.0, 1.0)
+
+
+func _on_prompt_changed(text: String) -> void:
+    _prompt_label.text = ("USE: " + text) if text != "" else ""
+
+
+func _on_message_posted(text: String) -> void:
+    _toast_label.text = text
+    _toast_time = 2.5
+    _toast_label.modulate.a = 1.0
 
 
 # ---------------------------------------------------------------- touch routing
@@ -146,11 +210,14 @@ func _release_all_touches() -> void:
     MobileInput.reset()
 
 
-# ---------------------------------------------------------------- pause menu
+# ---------------------------------------------------------------- panels
 
 func _on_action_pressed(action: StringName) -> void:
-    if action == &"pause":
-        _open_pause()
+    match action:
+        &"pause":
+            _open_pause()
+        &"backpack":
+            _open_inventory()
 
 
 func _open_pause() -> void:
@@ -164,6 +231,30 @@ func _open_pause() -> void:
 func _resume() -> void:
     _pause_layer.visible = false
     get_tree().paused = false
+
+
+func _open_inventory() -> void:
+    if get_tree().paused or _player == null:
+        return
+    _release_all_touches()
+    _inventory_panel.open(_player)
+    get_tree().paused = true
+
+
+func _on_inventory_closed() -> void:
+    get_tree().paused = false
+
+
+func _on_player_died() -> void:
+    _release_all_touches()
+    _death_screen.visible = true
+    get_tree().paused = true
+
+
+func _on_respawn_requested() -> void:
+    _death_screen.visible = false
+    get_tree().paused = false
+    _player.respawn()
 
 
 func _quit_to_menu() -> void:

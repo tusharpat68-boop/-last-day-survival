@@ -1,0 +1,17 @@
+{
+  "max_health": 100,
+  "max_hunger": 100,
+  "max_thirst": 100,
+  "max_stamina": 100,
+  "hunger_drain_per_sec": 0.15,
+  "thirst_drain_per_sec": 0.22,
+  "starvation_damage_per_sec": 0.4,
+  "dehydration_damage_per_sec": 0.7,
+  "health_regen_per_sec": 0.6,
+  "regen_min_stat": 50,
+  "stamina_sprint_drain_per_sec": 15,
+  "stamina_regen_per_sec": 18,
+  "stamina_regen_delay": 1.0,
+  "stamina_jump_cost": 10,
+  "stamina_exhausted_recover": 25
+}

@@ -17,6 +17,7 @@ config/icon="res://icon.svg"
 EventBus="*res://scripts/core/event_bus.gd"
 GameState="*res://scripts/core/game_state.gd"
 SettingsManager="*res://scripts/core/settings_manager.gd"
+ItemDatabase="*res://scripts/core/item_database.gd"
 MobileInput="*res://scripts/core/mobile_input.gd"
 
 [display]
@@ -39,4 +40,6 @@ pointing/emulate_touch_from_mouse=true
 [rendering]
 
 renderer/rendering_method="mobile"
+lights_and_shadows/directional_shadow/size=1024
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=0
 textures/vram_compression/import_etc2_astc=true
